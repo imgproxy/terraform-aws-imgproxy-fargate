@@ -1,0 +1,134 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "EC2FullAccess",
+			"Effect": "Allow",
+			"Action": "ec2:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "VPCFullAccess",
+			"Effect": "Allow",
+			"Action": "ec2:*Vpc*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "ELBFullAccess",
+			"Effect": "Allow",
+			"Action": "elasticloadbalancing:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "ECSFullAccess",
+			"Effect": "Allow",
+			"Action": "ecs:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "ECRAccess",
+			"Effect": "Allow",
+			"Action": "ecr:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "CloudWatchLogs",
+			"Effect": "Allow",
+			"Action": [
+				"logs:*",
+				"cloudwatch:*",
+				"events:*"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "S3TerraformState",
+			"Effect": "Allow",
+			"Action": "s3:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "DynamoDBTerraformLock",
+			"Effect": "Allow",
+			"Action": [
+				"dynamodb:*"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "IAMMinimalForTerraform",
+			"Effect": "Allow",
+			"Action": [
+				"iam:CreateRole",
+				"iam:DeleteRole",
+				"iam:GetRole",
+				"iam:UpdateRole",
+				"iam:TagRole",
+				"iam:UntagRole",
+				"iam:AttachRolePolicy",
+				"iam:DetachRolePolicy",
+				"iam:PutRolePolicy",
+				"iam:DeleteRolePolicy",
+				"iam:GetRolePolicy",
+				"iam:ListRolePolicies",
+				"iam:ListAttachedRolePolicies",
+				"iam:ListInstanceProfilesForRole",
+				"iam:PassRole",
+				"iam:CreateInstanceProfile",
+				"iam:DeleteInstanceProfile",
+				"iam:GetInstanceProfile",
+				"iam:ListInstanceProfiles",
+				"iam:AddRoleToInstanceProfile",
+				"iam:RemoveRoleFromInstanceProfile",
+				"iam:TagInstanceProfile"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "AutoScalingFullAccess",
+			"Effect": "Allow",
+			"Action": "autoscaling:*",
+			"Resource": "*"
+		},
+		{
+			"Sid": "SecretsManagerAccess",
+			"Effect": "Allow",
+			"Action": [
+				"secretsmanager:CreateSecret",
+				"secretsmanager:DeleteSecret",
+				"secretsmanager:DescribeSecret",
+				"secretsmanager:GetSecretValue",
+				"secretsmanager:PutSecretValue",
+				"secretsmanager:UpdateSecret",
+				"secretsmanager:TagResource",
+				"secretsmanager:UntagResource",
+				"secretsmanager:ListSecrets"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "SSMParameterAccess",
+			"Effect": "Allow",
+			"Action": [
+				"ssm:GetParameter",
+				"ssm:GetParameters",
+				"ssm:GetParametersByPath"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "ApplicationAutoScalingFullAccess",
+			"Effect": "Allow",
+			"Action": [
+				"application-autoscaling:*"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "CloudFrontFullAccess",
+			"Effect": "Allow",
+			"Action": "cloudfront:*",
+			"Resource": "*"
+		}
+	]
+}

@@ -1,0 +1,192 @@
+terraform {
+  required_version = ">= 1.5"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
+}
+
+provider "aws" {
+  region = var.region
+}
+
+data "aws_caller_identity" "current" {}
+
+# The default VPC only has public subnets: fine for trying the module out.
+# For production, run the tasks in private subnets (see the commented-out settings below).
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+data "aws_secretsmanager_secret" "keys" {
+  name = "imgproxy-keys"
+}
+
+data "aws_secretsmanager_secret" "salts" {
+  name = "imgproxy-salts"
+}
+
+data "aws_secretsmanager_secret" "pro_license" {
+  name = "imgproxy-pro-license"
+}
+
+data "aws_secretsmanager_secret" "pro_registry" {
+  name = "imgproxy-pro-registry"
+}
+
+# Optional secrets, used by the commented-out options below
+# data "aws_secretsmanager_secret" "secret" {
+#   name = "imgproxy-secret"
+# }
+# data "aws_secretsmanager_secret" "source_url_key" {
+#   name = "imgproxy-source-url-key"
+# }
+
+locals {
+  source_bucket = "${data.aws_caller_identity.current.account_id}-imgproxy-complete-source"
+  cache_bucket  = "${data.aws_caller_identity.current.account_id}-imgproxy-complete-cache"
+}
+
+module "imgproxy" {
+  source  = "imgproxy/imgproxy-fargate/aws"
+  version = "~> 0.1"
+
+  service_name = "imgproxy"
+  tag          = "v4"
+
+  # Security: request signing
+  keys_secret = {
+    arn = data.aws_secretsmanager_secret.keys.arn
+  }
+  salts_secret = {
+    arn = data.aws_secretsmanager_secret.salts.arn
+  }
+  signature_size = 32
+
+  # Optional: Bearer token auth (cannot be used with enable_cloudfront = true)
+  # secret_secret = {
+  #   arn = data.aws_secretsmanager_secret.secret.arn
+  # }
+
+  # Optional: source URL encryption
+  # source_url_encryption_key_secret = {
+  #   arn = data.aws_secretsmanager_secret.source_url_key.arn
+  # }
+
+  # imgproxy Pro. The registry credentials are a JSON secret with "username" and "password" keys.
+  pro = true
+  repo_credentials_secret = {
+    arn = data.aws_secretsmanager_secret.pro_registry.arn
+  }
+  pro_license_key_secret = {
+    arn = data.aws_secretsmanager_secret.pro_license.arn
+  }
+
+  # Optional: pull from your own registry instead (pro then no longer affects the image).
+  # An ECR repository in this account needs no credentials; other registries need repo_credentials_secret.
+  # repo = "123456789012.dkr.ecr.us-east-1.amazonaws.com/imgproxy-custom"
+
+  # Optional: trusted signatures (Pro only)
+  # trusted_signatures_secret = {
+  #   arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:imgproxy-trusted-sigs-AbCdEf"
+  # }
+
+  # Optional: additional secrets for third-party integrations
+  # secrets = {
+  #   IMGPROXY_NEW_RELIC_KEY = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:newrelic-license-AbCdEf" }
+  #   IMGPROXY_SENTRY_DSN    = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:sentry-dsn-AbCdEf", version = "3" }
+  # }
+
+  # Existing buckets (see README): source images and result cache (Pro)
+  source_buckets = [local.source_bucket]
+  cache_bucket   = local.cache_bucket
+
+  # Monitoring (ADOT collector sidecar: X-Ray traces, CloudWatch metrics and logs)
+  enable_monitoring = true
+
+  # Compute resources
+  cpu     = 2
+  memory  = "4Gi"
+  workers = 4
+  timeout = 60
+
+  # Fargate Spot: 70% of the tasks run on Spot capacity (up to 70% cheaper). One task always
+  # stays on regular Fargate, and imgproxy is stateless, so an interrupted task is replaced.
+  spot_percentage = 70
+
+  # Scaling
+  task_min_count = 2
+  task_max_count = 20
+
+  # Networking: tasks in public subnets of the default VPC, with public IPs
+  vpc_id     = data.aws_vpc.default.id
+  subnet_ids = data.aws_subnets.default.ids
+
+  # Production: run the tasks in private subnets and keep only the load balancer public.
+  # The private subnets need a route to a NAT gateway (the tasks pull the image and fetch
+  # source images from the internet); see "Private subnets" in the signed example.
+  # vpc_id           = "vpc-0123456789abcdef0"
+  # subnet_ids       = ["subnet-0aaa...", "subnet-0bbb..."] # private: the tasks
+  # alb_subnet_ids   = ["subnet-0ccc...", "subnet-0ddd..."] # public: the internet-facing ALB
+  # assign_public_ip = false
+
+  # Optional: HTTPS on the load balancer (requires a domain and an ACM certificate in this region)
+  # alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/..."]
+
+  # CloudFront CDN. Add your own domain with cloudfront_domains and a certificate issued in us-east-1.
+  enable_cloudfront = true
+  # cloudfront_domains              = ["cdn.example.com"]
+  # cloudfront_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+  # cloudfront_origin_shield_region = "us-east-1"
+  cdn_default_ttl = 3600
+  cdn_max_ttl     = 86400
+
+  # Logs
+  log_retention_days = 90
+
+  # Tags
+  tags = {
+    app  = "imgproxy"
+    team = "platform"
+  }
+
+  # Additional imgproxy configuration
+  environment = {
+    IMGPROXY_MAX_SRC_RESOLUTION = "50.0"
+    IMGPROXY_JPEG_PROGRESSIVE   = "true"
+    IMGPROXY_S3_REGION          = var.region
+    IMGPROXY_CACHE_USE          = "s3"
+    IMGPROXY_CACHE_BUCKET       = local.cache_bucket
+  }
+}
+
+output "url" {
+  description = "The URL of the deployed imgproxy service (the CloudFront domain)"
+  value       = module.imgproxy.url
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront domain. Point a CNAME (or a Route 53 alias) for your own domain at it"
+  value       = module.imgproxy.cloudfront_domain_name
+}
+
+output "log_group_name" {
+  description = "CloudWatch Logs group of imgproxy and the collector sidecar"
+  value       = module.imgproxy.log_group_name
+}
