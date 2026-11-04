@@ -166,7 +166,7 @@ resource "aws_ecs_cluster" "main" {
       error_message = "task_min_count must not exceed task_max_count."
     }
     precondition {
-      condition     = var.desired_count == null || (var.desired_count >= var.task_min_count && var.desired_count <= var.task_max_count)
+      condition     = var.desired_count == null ? true : (var.desired_count >= var.task_min_count && var.desired_count <= var.task_max_count)
       error_message = "desired_count must be between task_min_count and task_max_count."
     }
     precondition {

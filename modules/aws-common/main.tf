@@ -41,7 +41,7 @@ resource "terraform_data" "checks" {
     }
 
     precondition {
-      condition     = var.cloudfront_origin_domain == null || !contains(var.cloudfront_domains, var.cloudfront_origin_domain)
+      condition     = var.cloudfront_origin_domain == null ? true : !contains(var.cloudfront_domains, var.cloudfront_origin_domain)
       error_message = "cloudfront_origin_domain must differ from cloudfront_domains: the origin domain points at the ALB, the CloudFront domains point at CloudFront."
     }
   }
