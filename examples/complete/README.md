@@ -70,6 +70,7 @@ HTTPS between itself and the load balancer, so enabling it means attaching the A
 
 ```bash
 echo "region = \"$REGION\"" > terraform.tfvars
+echo "profile = \"my-profile\"" >> terraform.tfvars # your AWS CLI profile; omit for default credentials
 
 terraform init
 terraform plan

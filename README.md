@@ -73,7 +73,12 @@ Without a certificate and without `allow_insecure_http = true`, the module refus
 
 ### Permissions
 
-The deployer needs permissions for ECS, the load balancer, security groups, Application Auto Scaling, CloudWatch alarms and log groups, and CloudFront. Two example policies (replace the account ID `123456789012` and the `imgproxy` name prefix):
+The deployer needs permissions for ECS, the load balancer, security groups, Application Auto Scaling, CloudWatch alarms and log groups, and CloudFront. Two example policies. Before pasting either into a permission set or IAM policy, edit it:
+
+- Replace **`123456789012`** with your own 12-digit AWS account ID (`aws sts get-caller-identity --profile my-profile --query Account --output text`). It appears in the `iam:` statements' `Resource` ARNs (`arn:aws:iam::123456789012:role/...`).
+- Replace the **`imgproxy`** role-name prefix (`role/imgproxy-*`, or `role/imgproxy-execution` and `role/imgproxy-task` in the second file) if your `service_name` is not `imgproxy`: the module names its roles `<service_name>-execution-*` and `<service_name>-task-*`.
+
+The JSON files cannot carry comments (IAM rejects unknown keys), so this note lives here. After saving a change to an IAM Identity Center permission set, reprovision it on the account and run `aws sso login` again.
 
 - [example-permission-set.json](example-permission-set.json): the module creates the task execution and task roles, which is why the deployer needs IAM access at all. It is limited to roles named `imgproxy-*`, allows attaching only `AmazonECSTaskExecutionRolePolicy`, and allows `iam:PassRole` only to ECS tasks. Someone who can write inline policies on those roles still controls what they may do, so treat this identity as privileged.
 - [example-permission-set-existing-roles.json](example-permission-set-existing-roles.json): you create the roles and pass them as `execution_role_arn` and `task_role_arn`. The deployer then needs only `iam:PassRole` on them. The task role needs the S3 and monitoring access the module would otherwise grant; the execution role needs the ECS managed policy plus read access to your secrets.

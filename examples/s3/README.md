@@ -38,6 +38,7 @@ aws s3 mb --profile my-profile s3://$ACCOUNT_ID-imgproxy-images --region $REGION
 
 ```bash
 echo "region = \"$REGION\"" > terraform.tfvars
+echo "profile = \"my-profile\"" >> terraform.tfvars # your AWS CLI profile; omit for default credentials
 
 terraform init
 terraform plan

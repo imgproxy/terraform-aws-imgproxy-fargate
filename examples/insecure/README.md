@@ -45,6 +45,7 @@ REGION=us-east-1
 
 ```bash
 echo "region = \"$REGION\"" > terraform.tfvars
+echo "profile = \"my-profile\"" >> terraform.tfvars # your AWS CLI profile; omit for default credentials
 
 terraform init
 terraform plan

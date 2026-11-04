@@ -15,8 +15,15 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "profile" {
+  description = "AWS CLI profile used by the provider (null = default credentials / AWS_PROFILE)"
+  type        = string
+  default     = null
+}
+
 provider "aws" {
-  region = var.region
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_caller_identity" "current" {}

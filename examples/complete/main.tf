@@ -15,8 +15,15 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "profile" {
+  description = "AWS CLI profile used by the provider (null = default credentials / AWS_PROFILE)"
+  type        = string
+  default     = null
+}
+
 provider "aws" {
-  region = var.region
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_caller_identity" "current" {}
@@ -64,9 +71,8 @@ locals {
 }
 
 module "imgproxy" {
-  #source  = "imgproxy/imgproxy-fargate/aws"
-  source = "github.com/imgproxy/terraform-aws-imgproxy-fargate"
-  #version = "~> 0.1"
+  source  = "imgproxy/imgproxy-fargate/aws"
+  version = "~> 0.1"
 
   service_name = "imgproxy"
   tag          = "v4"
@@ -157,7 +163,7 @@ module "imgproxy" {
   # also needs the ALB certificate above and an origin name that certificate covers:
   #   - create a DNS record for cloudfront_origin_domain pointing at the ALB (outputs alb_dns_name, alb_zone_id)
   #   - cloudfront_certificate_arn must be issued in us-east-1
-  enable_cloudfront               = true
+  enable_cloudfront = true
   # cloudfront_origin_domain        = "origin.example.com"
   # cloudfront_domains              = ["cdn.example.com"]
   # cloudfront_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/..."

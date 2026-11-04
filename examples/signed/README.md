@@ -30,6 +30,7 @@ aws secretsmanager create-secret --profile my-profile --region $REGION --name im
 
 ```bash
 echo "region = \"$REGION\"" > terraform.tfvars
+echo "profile = \"my-profile\"" >> terraform.tfvars # your AWS CLI profile; omit for default credentials
 
 terraform init
 terraform plan
