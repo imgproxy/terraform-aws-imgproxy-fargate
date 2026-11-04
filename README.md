@@ -4,15 +4,17 @@ Terraform module to deploy [imgproxy](https://imgproxy.net/) on AWS ECS with Far
 
 ## Features
 
-- **Fargate and Fargate Spot** (`spot_percentage`), with auto scaling on imgproxy's own metrics
-- **Secure by default**: tasks without public IPs and HTTPS required on the load balancer ([details](#secure-defaults))
-- **Application Load Balancer** with ACM certificates and HTTP to HTTPS redirect
-- **CloudFront CDN**, with the load balancer locked to CloudFront
-- **imgproxy Pro and private registries** through Secrets Manager
-- **Request signing** with keys and salts from Secrets Manager
-- **OpenTelemetry sidecar** (ADOT) for traces to X-Ray and metrics and logs to CloudWatch
-- **S3** for source images and the result cache (Pro)
-- **IAM execution and task roles**, created for you or supplied
+The module creates the required resources:
+
+- ECS cluster, service and task definition on Fargate and Fargate Spot (`spot_percentage`)
+- Application Load Balancer with ACM certificates and HTTP to HTTPS redirect
+- Security groups
+- Autoscaling rules on imgproxy's own metrics
+- IAM execution and task roles (or use your own)
+- CloudFront distribution (optional), with the load balancer locked to it
+- OpenTelemetry (ADOT) sidecar for X-Ray and CloudWatch (optional)
+
+Also supported: request signing, imgproxy Pro and private registries through Secrets Manager, S3 as image source and result cache (Pro). Secure by default ([details](#secure-defaults)).
 
 ## Usage
 
@@ -38,24 +40,20 @@ module "imgproxy" {
 }
 ```
 
-## Prerequisites
-
-- An AWS account with [sufficient permissions](#permissions) and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) authenticated
-- An existing VPC with subnets: the module creates no networking (see [Networking](#networking))
-- Terraform >= 1.5
+Requires Terraform >= 1.5, an authenticated AWS CLI with [sufficient permissions](#permissions), and an existing VPC with subnets: the module creates no networking (see [Networking](#networking)).
 
 ## Examples
 
 Start with [insecure](examples/insecure/) and follow the "Next" link at the end of each README; every step adds one feature.
 
 - [insecure](examples/insecure/) - Minimal deployment without request signing (development only)
-- [signed](examples/signed/) - URL signing, plus the [production setup](examples/signed/#production-setup) with private subnets and HTTPS
+- [signed](examples/signed/) - URL signing, plus the [production setup](examples/signed/#production-setup)
 - [s3](examples/s3/) - Private S3 bucket as the image source
 - [cdn](examples/cdn/) - CloudFront in front of the load balancer
 - [pro](examples/pro/) - imgproxy Pro with license key and S3 result cache
 - [complete](examples/complete/) - Pro, monitoring and S3 together
 
-All examples use Fargate Spot. To stay self-contained they run in the default VPC over plain HTTP, so they set `assign_public_ip = true` and `allow_insecure_http = true` explicitly. That is for testing only.
+The examples run in the default VPC over plain HTTP, so they set `assign_public_ip = true` and `allow_insecure_http = true`. Testing only.
 
 ## Notes
 
@@ -66,50 +64,41 @@ Each insecure choice is an explicit, named opt-in:
 | Default | Opt-in | Acceptable for |
 |---------|--------|----------------|
 | Tasks have no public IP | `assign_public_ip = true` | Public subnets such as the default VPC. Each task is then addressable by IP (the security group still admits only the ALB on port 8080) |
-| The ALB requires HTTPS (`alb_certificate_arns`) | `allow_insecure_http = true` | Testing: traffic, signed URLs and tokens are unencrypted. With CloudFront, the origin secret header is too |
+| The ALB requires HTTPS (`alb_certificate_arns`) | `allow_insecure_http = true` | Testing: traffic, signed URLs and tokens are unencrypted (with CloudFront, the origin secret header too) |
 | Requests must be signed | `insecure = true` | Development: anyone can use your imgproxy and, with `source_buckets`, read those buckets |
 
 Without a certificate and without `allow_insecure_http = true`, the module refuses to plan.
 
 ### Permissions
 
-The deployer needs permissions for ECS, the load balancer, security groups, Application Auto Scaling, CloudWatch alarms and log groups, and CloudFront. Two example policies. Before pasting either into a permission set or IAM policy, edit it:
+The deployer needs permissions for ECS, the load balancer, security groups, Application Auto Scaling, CloudWatch alarms and log groups, and CloudFront. Two example policies are provided; before using either, replace `123456789012` with your AWS account ID and the `imgproxy` role-name prefix with your `service_name` (the module names its roles `<service_name>-execution-*` and `<service_name>-task-*`).
 
-- Replace **`123456789012`** with your own 12-digit AWS account ID (`aws sts get-caller-identity --profile my-profile --query Account --output text`). It appears in the `iam:` statements' `Resource` ARNs (`arn:aws:iam::123456789012:role/...`).
-- Replace the **`imgproxy`** role-name prefix (`role/imgproxy-*`, or `role/imgproxy-execution` and `role/imgproxy-task` in the second file) if your `service_name` is not `imgproxy`: the module names its roles `<service_name>-execution-*` and `<service_name>-task-*`.
+- [example-permission-set.json](example-permission-set.json): the module creates the task roles, so the deployer needs IAM access, limited to roles named `imgproxy-*`. Treat this identity as privileged.
+- [example-permission-set-existing-roles.json](example-permission-set-existing-roles.json): you create the roles and pass them as `execution_role_arn` and `task_role_arn`; the deployer then needs only `iam:PassRole` on them.
 
-The JSON files cannot carry comments (IAM rejects unknown keys), so this note lives here. After saving a change to an IAM Identity Center permission set, reprovision it on the account and run `aws sso login` again.
-
-- [example-permission-set.json](example-permission-set.json): the module creates the task execution and task roles, which is why the deployer needs IAM access at all. It is limited to roles named `imgproxy-*`, allows attaching only `AmazonECSTaskExecutionRolePolicy`, and allows `iam:PassRole` only to ECS tasks. Someone who can write inline policies on those roles still controls what they may do, so treat this identity as privileged.
-- [example-permission-set-existing-roles.json](example-permission-set-existing-roles.json): you create the roles and pass them as `execution_role_arn` and `task_role_arn`. The deployer then needs only `iam:PassRole` on them. The task role needs the S3 and monitoring access the module would otherwise grant; the execution role needs the ECS managed policy plus read access to your secrets.
-
-Neither policy reads secret values or covers the Terraform state backend. They were written from the module's resources and not applied end to end against AWS, so adjust them if an apply fails with `AccessDenied`.
+Neither policy reads secret values or covers the Terraform state backend. They were not applied end to end against AWS, so adjust them if an apply fails with `AccessDenied`.
 
 ### Networking
 
-Run the tasks in private subnets and keep only the ALB public, as in Usage. `assign_public_ip = false` is the default.
+Run the tasks in private subnets and keep only the ALB public, as in Usage.
 
-- `alb_subnet_ids` must be public subnets. When unset, the ALB goes into `subnet_ids`, the private ones, and is unreachable from the internet. `internal_alb = true` makes an ALB reachable only from the VPC and connected networks (peering, VPN, Direct Connect).
-- Private tasks need an outbound route: imgproxy fetches images from the internet and the task pulls from `ghcr.io` (or `docker.imgproxy.pro`). Use a **NAT gateway**; without one, tasks fail with `CannotPullContainerError`. With S3 sources and an ECR image, VPC endpoints can replace it: an S3 gateway endpoint (free) plus interface endpoints for `ecr.api`, `ecr.dkr`, `secretsmanager` and `logs`.
+- `alb_subnet_ids` must be public subnets. When unset, the ALB goes into `subnet_ids` and is unreachable from the internet. `internal_alb = true` makes it reachable only from the VPC and connected networks.
+- Private tasks need an outbound route to pull from `ghcr.io` (or `docker.imgproxy.pro`) and fetch images: use a **NAT gateway**, or tasks fail with `CannotPullContainerError`. With S3 sources and an ECR image, VPC endpoints can replace it: S3 gateway plus interface endpoints for `ecr.api`, `ecr.dkr`, `secretsmanager` and `logs`.
 - The task security group admits only the ALB on port 8080. Add VPN or bastion rules through `tasks_security_group_id` or `additional_security_group_ids`.
-- Quick start: tasks in public subnets, such as the default VPC, need an explicit `assign_public_ip = true`, or they cannot pull their image. Testing only.
 
 ### Additional secrets
 
-`secrets` maps extra environment variables (named as in [imgproxy's configuration](https://docs.imgproxy.net/configuration)) to Secrets Manager secrets:
+`secrets` maps extra environment variables (named as in [imgproxy's configuration](https://docs.imgproxy.net/configuration)) to Secrets Manager secrets. `version` is optional (the current version is used by default). A module-created execution role can read every secret you pass.
 
 ```hcl
 secrets = {
-  IMGPROXY_SENTRY_DSN  = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:sentry-dsn-AbCdEf" }
-  IMGPROXY_BUGSNAG_KEY = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:bugsnag-api-key-AbCdEf", version = "3" }
+  IMGPROXY_SENTRY_DSN = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:sentry-dsn-AbCdEf" }
 }
 ```
 
-`version` is a Secrets Manager version ID; the current version is used when it is omitted. An execution role created by the module can read every secret you pass.
-
 ### Image delivery
 
-Fargate pulls the image directly: `ghcr.io/imgproxy/imgproxy`, or `docker.imgproxy.pro/imgproxy` with `pro = true`. For your own image, set `repo` (without tag) and `tag` (a version, or a `sha256:` digest referenced as `repo@sha256:...`):
+Fargate pulls `ghcr.io/imgproxy/imgproxy`, or `docker.imgproxy.pro/imgproxy` with `pro = true`. For your own image, set `repo` (without tag) and `tag` (a version, or a `sha256:` digest):
 
 ```hcl
 repo                    = "registry.example.com/imgproxy-custom"
@@ -117,29 +106,24 @@ repo_credentials_secret = { arn = "arn:aws:secretsmanager:us-east-1:123456789012
 tag                     = "my-tag"
 ```
 
-- **ECR** in your account and public images need no credentials. The module-created execution role can pull from ECR; a custom `execution_role_arn` needs the usual ECR pull permissions.
-- Any other **private registry** needs `repo_credentials_secret`: a JSON secret with `username` and `password` keys (ECS `repositoryCredentials`). The module-created execution role can read it; grant a custom one `secretsmanager:GetSecretValue` yourself.
-- `pro = true` only selects the default `repo` and has no effect when `repo` is set. For docker.imgproxy.pro only `repo_credentials_secret` is required (username `imgproxy`).
+- Public images and **ECR** in your account need no credentials. Other private registries need `repo_credentials_secret`, a JSON secret with `username` and `password` keys (for docker.imgproxy.pro the username is `imgproxy`). A custom `execution_role_arn` must be granted ECR pull or `secretsmanager:GetSecretValue` yourself.
+- `pro = true` only selects the default `repo`; it has no effect when `repo` is set.
 
-Tasks run on ARM64 (Graviton) by default, so the image must support `linux/arm64`; otherwise set `cpu_architecture = "X86_64"`.
+Tasks run on ARM64 (Graviton) by default; for images without `linux/arm64`, set `cpu_architecture = "X86_64"`.
 
-### Fargate Spot and scaling
+### Scaling, monitoring and logs
 
-`spot_percentage` (0-99) runs that share of the tasks on `FARGATE_SPOT`, which costs up to 70% less (`70` means weights 30 and 70). One task always stays on regular Fargate (`base = 1`), and ECS replaces reclaimed Spot tasks because imgproxy is stateless. With `task_min_count = 1` the single task is the on-demand one, and Spot is used only on scale-out.
-
-Tasks scale between `task_min_count` and `task_max_count` with step policies on imgproxy's `WorkersUtilization` metric (out above 80%, in below 50%), which imgproxy publishes through the `IMGPROXY_CLOUD_WATCH_*` variables the module always sets. Terraform ignores later changes to the task count.
-
-### Monitoring, S3 and logs
-
-- `enable_monitoring = true` adds an ADOT collector sidecar (OTLP on `localhost:4318`) that exports traces to X-Ray and metrics and logs to CloudWatch, with matching task-role permissions and Container Insights. It reserves 256Mi of the task memory; replace its configuration with `otel_collector_config`.
-- `source_buckets` and `cache_bucket` (Pro) get IAM permissions on existing buckets; the module does not create them. `source_buckets` enables the `s3://` scheme, and the cache is configured through `environment`. Set `IMGPROXY_S3_REGION` there when the bucket is not in the default region.
-- The service exposes `/health` on port 8080. Logs go to the CloudWatch group `/aws/ecs/<service_name>` (`log_group_name` output), kept for `log_retention_days` (365 by default).
+- `spot_percentage` (0-99) runs that share of tasks on `FARGATE_SPOT` (up to 70% cheaper). One task always stays on regular Fargate, and ECS replaces reclaimed Spot tasks.
+- Tasks scale between `task_min_count` and `task_max_count` on imgproxy's `WorkersUtilization` metric (out above 80%, in below 50%). Terraform ignores later changes to the task count.
+- `enable_monitoring = true` adds an ADOT sidecar (OTLP on `localhost:4318`) exporting traces to X-Ray and metrics and logs to CloudWatch. It reserves 256Mi of task memory; replace its configuration with `otel_collector_config`.
+- `source_buckets` and `cache_bucket` (Pro) grant IAM permissions on existing buckets; the module does not create them. Set `IMGPROXY_S3_REGION` in `environment` when a bucket is outside the default region.
+- `/health` is served on port 8080. Logs go to the CloudWatch group `/aws/ecs/<service_name>`, kept for `log_retention_days` (365 by default).
 
 ### CloudFront
 
 `enable_cloudfront = true` puts CloudFront in front of the ALB (`create_alb` must stay `true`), on its `*.cloudfront.net` domain or on yours through `cloudfront_domains` and `cloudfront_certificate_arn` (issued in **us-east-1**).
 
-The ALB is locked to CloudFront: its security group admits only CloudFront's origin-facing IPs, and the listener returns `403` unless the request carries the module-generated secret `X-Origin-Verify` header. That only holds if the CloudFront-to-ALB hop is encrypted, so the module requires HTTPS there:
+The ALB is locked to CloudFront: its security group admits only CloudFront's IPs, and the listener returns `403` without the module-generated `X-Origin-Verify` header. That only holds if the hop is encrypted, so HTTPS is required:
 
 ```hcl
 enable_cloudfront        = true
@@ -147,11 +131,9 @@ alb_certificate_arns     = ["arn:aws:acm:us-east-1:123456789012:certificate/..."
 cloudfront_origin_domain = "origin.example.com"
 ```
 
-CloudFront validates the ALB certificate against the origin's domain name, so it cannot use the ALB's own `*.elb.amazonaws.com` name with your certificate. `cloudfront_origin_domain` is a dedicated name: cover it with the ALB certificate and point a DNS record at the ALB (`alb_dns_name` and `alb_zone_id` outputs). It must differ from `cloudfront_domains`, and a certificate without it fails to plan.
+CloudFront validates the ALB certificate against the origin's name, so `cloudfront_origin_domain` must be a dedicated name covered by the ALB certificate, pointing at the ALB (`alb_dns_name` and `alb_zone_id` outputs), and different from `cloudfront_domains`. For testing, `allow_insecure_http = true` makes the hop plain HTTP, which lets anyone who captures the header bypass the lock.
 
-For testing without a domain, `allow_insecure_http = true` makes that hop plain HTTP: anyone who captures the secret header bypasses the lock, and the traffic is unencrypted.
-
-Cache keys follow your imgproxy configuration (`Accept` with format detection, client hints, `IMGPROXY_CACHE_KEY_HEADERS` and `IMGPROXY_CACHE_KEY_COOKIES`). `secret_secret` cannot be combined with CloudFront, which does not forward the `Authorization` header. Query strings are not forwarded or cached either, so percent-encode any `?` in plain source URLs.
+Cache keys follow your imgproxy configuration (`Accept` with format detection, client hints, `IMGPROXY_CACHE_KEY_HEADERS` and `IMGPROXY_CACHE_KEY_COOKIES`). `secret_secret` cannot be combined with CloudFront, which does not forward `Authorization`. Query strings are not forwarded either, so percent-encode any `?` in plain source URLs.
 
 ### Vendored modules
 
