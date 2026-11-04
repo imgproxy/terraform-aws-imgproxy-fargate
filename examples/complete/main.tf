@@ -64,8 +64,9 @@ locals {
 }
 
 module "imgproxy" {
-  source  = "imgproxy/imgproxy-fargate/aws"
-  version = "~> 0.1"
+  #source  = "imgproxy/imgproxy-fargate/aws"
+  source = "github.com/imgproxy/terraform-aws-imgproxy-fargate"
+  #version = "~> 0.1"
 
   service_name = "imgproxy"
   tag          = "v4"
@@ -134,28 +135,36 @@ module "imgproxy" {
   task_min_count = 2
   task_max_count = 20
 
-  # Networking: tasks in public subnets of the default VPC, with public IPs
+  # Networking: tasks in public subnets of the default VPC
   vpc_id     = data.aws_vpc.default.id
   subnet_ids = data.aws_subnets.default.ids
 
-  # Production: run the tasks in private subnets and keep only the load balancer public.
-  # The private subnets need a route to a NAT gateway (the tasks pull the image and fetch
-  # source images from the internet); see "Private subnets" in the signed example.
-  # vpc_id           = "vpc-0123456789abcdef0"
-  # subnet_ids       = ["subnet-0aaa...", "subnet-0bbb..."] # private: the tasks
-  # alb_subnet_ids   = ["subnet-0ccc...", "subnet-0ddd..."] # public: the internet-facing ALB
-  # assign_public_ip = false
+  # Testing opt-ins: the module is private and encrypted by default. The default VPC has only public
+  # subnets and this example has no domain, so both defaults are waived here. For production, drop
+  # them and use the settings below.
+  assign_public_ip    = true # tasks in public subnets need a public IP to pull the image
+  allow_insecure_http = true # plain HTTP on the ALB: requests and signed URLs are unencrypted
 
-  # Optional: HTTPS on the load balancer (requires a domain and an ACM certificate in this region)
+  # Production: tasks in private subnets, only the load balancer public, HTTPS on the load balancer.
+  # The private subnets need a route to a NAT gateway (the tasks pull the image and fetch source
+  # images from the internet); see "Production setup" in the signed example.
+  # vpc_id               = "vpc-0123456789abcdef0"
+  # subnet_ids           = ["subnet-0aaa...", "subnet-0bbb..."] # private: the tasks
+  # alb_subnet_ids       = ["subnet-0ccc...", "subnet-0ddd..."] # public: the internet-facing ALB
   # alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/..."]
 
-  # CloudFront CDN. Add your own domain with cloudfront_domains and a certificate issued in us-east-1.
-  enable_cloudfront = true
+  # Optional: CloudFront CDN (requires a domain name). CloudFront reaches the ALB over HTTPS, so it
+  # also needs the ALB certificate above and an origin name that certificate covers:
+  #   - create a DNS record for cloudfront_origin_domain pointing at the ALB (outputs alb_dns_name, alb_zone_id)
+  #   - cloudfront_certificate_arn must be issued in us-east-1
+  enable_cloudfront               = true
+  # cloudfront_origin_domain        = "origin.example.com"
   # cloudfront_domains              = ["cdn.example.com"]
   # cloudfront_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/..."
   # cloudfront_origin_shield_region = "us-east-1"
-  cdn_default_ttl = 3600
-  cdn_max_ttl     = 86400
+  # cdn_default_ttl                 = 3600
+  # cdn_max_ttl                     = 86400
+  # allow_insecure_http = true
 
   # Logs
   log_retention_days = 90
@@ -177,12 +186,17 @@ module "imgproxy" {
 }
 
 output "url" {
-  description = "The URL of the deployed imgproxy service (the CloudFront domain)"
+  description = "The URL of the deployed imgproxy service"
   value       = module.imgproxy.url
 }
 
+output "alb_dns_name" {
+  description = "ALB DNS name. Point a DNS record for the load balancer at it"
+  value       = module.imgproxy.alb_dns_name
+}
+
 output "cloudfront_domain_name" {
-  description = "CloudFront domain. Point a CNAME (or a Route 53 alias) for your own domain at it"
+  description = "CloudFront domain (when CloudFront is enabled). Point a CNAME (or a Route 53 alias) for your own domain at it"
   value       = module.imgproxy.cloudfront_domain_name
 }
 

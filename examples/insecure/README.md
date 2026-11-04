@@ -9,8 +9,18 @@ images.
 > imgproxy (unlimited bandwidth costs, no protection against abuse, no control over processed images). Never use
 > this configuration in production.
 
-It runs in the **default VPC**, whose subnets are public, so the tasks get public IPs. Production deployments should
-run the tasks in private subnets instead: see [signed](../signed/#private-subnets).
+## Testing opt-ins
+
+The module is private and encrypted by default: tasks get no public IPs and the load balancer requires HTTPS. This
+example has no VPC of its own and no domain, so it waives both defaults explicitly:
+
+```hcl
+assign_public_ip    = true # the default VPC has only public subnets, so tasks need a public IP to pull the image
+allow_insecure_http = true # plain HTTP on the ALB (no domain and certificate here): requests are unencrypted
+```
+
+Every example in this repository does the same, for testing only. For a production setup, with the tasks in private
+subnets and HTTPS on the load balancer, see [signed](../signed/#production-setup).
 
 ## AWS setup
 
@@ -19,8 +29,11 @@ authenticated (the [permissions](../../example-permission-set.json) the module n
 
 ```bash
 aws configure
-# or: aws sso login --profile your-profile && export AWS_PROFILE=your-profile
+# or: aws sso login --profile my-profile && export AWS_PROFILE=my-profile
 ```
+
+> The `aws` commands below use `--profile my-profile`: replace it with your profile, or drop it if you use the default credentials.
+> An `aws: [ERROR]: An error occurred (ForbiddenException) when calling the GetRoleCredentials operation: No access` error usually means the profile is missing or wrong.
 
 ## Prerequisites
 

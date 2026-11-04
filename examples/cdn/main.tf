@@ -61,7 +61,21 @@ module "imgproxy" {
   vpc_id     = data.aws_vpc.default.id
   subnet_ids = data.aws_subnets.default.ids
 
+  # Testing opt-ins: the module is private and encrypted by default. The default VPC has only public
+  # subnets and this example has no domain, so both defaults are waived here. For production see
+  # "Production setup" in the signed example.
+  assign_public_ip    = true # tasks in public subnets need a public IP to pull the image
+  allow_insecure_http = true # plain HTTP on the ALB: requests and signed URLs are unencrypted
+
   enable_cloudfront = true
+
+  # With allow_insecure_http, CloudFront reaches the ALB over plain HTTP, so the secret header that
+  # locks the ALB to CloudFront and all traffic cross the network in clear text. Testing only.
+  # Production: serve the ALB over HTTPS and let CloudFront validate it (remove allow_insecure_http):
+  #   1. Request an ACM certificate in this region for an origin name such as origin.example.com.
+  #   2. Create a DNS record for that name pointing at the ALB (outputs alb_dns_name, alb_zone_id).
+  # alb_certificate_arns     = ["arn:aws:acm:us-east-1:123456789012:certificate/..."]
+  # cloudfront_origin_domain = "origin.example.com"
 
   # With a domain, CloudFront serves it over HTTPS using an ACM certificate issued in us-east-1:
   # cloudfront_domains         = ["cdn.example.com"]
@@ -73,6 +87,16 @@ module "imgproxy" {
 
 output "url" {
   value = module.imgproxy.url
+}
+
+output "alb_dns_name" {
+  value       = module.imgproxy.alb_dns_name
+  description = "ALB DNS name. Point the cloudfront_origin_domain record at it in production"
+}
+
+output "alb_zone_id" {
+  value       = module.imgproxy.alb_zone_id
+  description = "ALB hosted zone ID, for Route 53 alias records"
 }
 
 output "cloudfront_domain_name" {

@@ -61,6 +61,17 @@ locals {
     valueFrom = v["version"] != "" ? "${v["arn"]}:::${v["version"]}" : v["arn"]
   }]
 
+  # Valid Fargate task memory (MiB) per vCPU: [min, max]
+  fargate_memory_range = {
+    "0.25" = [512, 2048]
+    "0.5"  = [1024, 4096]
+    "1"    = [2048, 8192]
+    "2"    = [4096, 16384]
+    "4"    = [8192, 30720]
+    "8"    = [16384, 61440]
+    "16"   = [32768, 122880]
+  }
+
   use_spot       = var.spot_percentage > 0
   fargate_weight = 100 - var.spot_percentage
   spot_weight    = var.spot_percentage
@@ -89,6 +100,7 @@ module "aws_common" {
   internal_alb               = var.internal_alb
   allow_public_access        = var.allow_public_access
   alb_certificate_arns       = var.alb_certificate_arns
+  allow_insecure_http        = var.allow_insecure_http
   alb_redirect_http_to_https = var.alb_redirect_http_to_https
   alb_idle_timeout           = var.alb_idle_timeout
   alb_deregistration_delay   = var.alb_deregistration_delay
@@ -96,6 +108,7 @@ module "aws_common" {
 
   enable_cloudfront               = var.enable_cloudfront
   cloudfront_certificate_arn      = var.cloudfront_certificate_arn
+  cloudfront_origin_domain        = var.cloudfront_origin_domain
   cloudfront_domains              = var.cloudfront_domains
   cloudfront_origin_shield_region = var.cloudfront_origin_shield_region
   cdn_default_ttl                 = var.cdn_default_ttl
@@ -143,6 +156,22 @@ resource "aws_ecs_cluster" "main" {
     precondition {
       condition     = length(var.cloudfront_domains) == 0 || var.cloudfront_certificate_arn != null
       error_message = "cloudfront_certificate_arn is required when cloudfront_domains is set."
+    }
+    precondition {
+      condition     = local.memory_mb >= local.fargate_memory_range[tostring(var.cpu)][0] && local.memory_mb <= local.fargate_memory_range[tostring(var.cpu)][1]
+      error_message = "memory is not valid for this cpu on Fargate: ${var.cpu} vCPU requires ${local.fargate_memory_range[tostring(var.cpu)][0]}–${local.fargate_memory_range[tostring(var.cpu)][1]} MiB."
+    }
+    precondition {
+      condition     = var.task_min_count <= var.task_max_count
+      error_message = "task_min_count must not exceed task_max_count."
+    }
+    precondition {
+      condition     = var.desired_count == null || (var.desired_count >= var.task_min_count && var.desired_count <= var.task_max_count)
+      error_message = "desired_count must be between task_min_count and task_max_count."
+    }
+    precondition {
+      condition     = var.alb_deregistration_delay >= var.alb_idle_timeout
+      error_message = "alb_deregistration_delay must be >= alb_idle_timeout to avoid resetting in-flight connections."
     }
   }
 }
@@ -336,7 +365,9 @@ resource "aws_ecs_service" "main" {
     ignore_changes = [desired_count]
   }
 
-  depends_on = [module.aws_common]
+  # The capacity providers must be associated with the cluster before the service
+  # references them (and the service must go first on destroy).
+  depends_on = [module.aws_common, aws_ecs_cluster_capacity_providers.main]
 }
 
 # ── ECS Task Auto Scaling ─────────────────────────────────────────────────────

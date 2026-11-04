@@ -85,6 +85,12 @@ module "imgproxy" {
   vpc_id     = data.aws_vpc.default.id
   subnet_ids = data.aws_subnets.default.ids
 
+  # Testing opt-ins: the module is private and encrypted by default. The default VPC has only public
+  # subnets and this example has no domain, so both defaults are waived here. For production see
+  # "Production setup" in the signed example.
+  assign_public_ip    = true # tasks in public subnets need a public IP to pull the image
+  allow_insecure_http = true # plain HTTP on the ALB: requests and signed URLs are unencrypted
+
   # Existing bucket (see README) for the processed-result cache (Pro)
   cache_bucket = local.cache_bucket
 

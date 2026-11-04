@@ -1,134 +1,148 @@
 {
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "EC2FullAccess",
-			"Effect": "Allow",
-			"Action": "ec2:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "VPCFullAccess",
-			"Effect": "Allow",
-			"Action": "ec2:*Vpc*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "ELBFullAccess",
-			"Effect": "Allow",
-			"Action": "elasticloadbalancing:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "ECSFullAccess",
-			"Effect": "Allow",
-			"Action": "ecs:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "ECRAccess",
-			"Effect": "Allow",
-			"Action": "ecr:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "CloudWatchLogs",
-			"Effect": "Allow",
-			"Action": [
-				"logs:*",
-				"cloudwatch:*",
-				"events:*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "S3TerraformState",
-			"Effect": "Allow",
-			"Action": "s3:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "DynamoDBTerraformLock",
-			"Effect": "Allow",
-			"Action": [
-				"dynamodb:*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "IAMMinimalForTerraform",
-			"Effect": "Allow",
-			"Action": [
-				"iam:CreateRole",
-				"iam:DeleteRole",
-				"iam:GetRole",
-				"iam:UpdateRole",
-				"iam:TagRole",
-				"iam:UntagRole",
-				"iam:AttachRolePolicy",
-				"iam:DetachRolePolicy",
-				"iam:PutRolePolicy",
-				"iam:DeleteRolePolicy",
-				"iam:GetRolePolicy",
-				"iam:ListRolePolicies",
-				"iam:ListAttachedRolePolicies",
-				"iam:ListInstanceProfilesForRole",
-				"iam:PassRole",
-				"iam:CreateInstanceProfile",
-				"iam:DeleteInstanceProfile",
-				"iam:GetInstanceProfile",
-				"iam:ListInstanceProfiles",
-				"iam:AddRoleToInstanceProfile",
-				"iam:RemoveRoleFromInstanceProfile",
-				"iam:TagInstanceProfile"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "AutoScalingFullAccess",
-			"Effect": "Allow",
-			"Action": "autoscaling:*",
-			"Resource": "*"
-		},
-		{
-			"Sid": "SecretsManagerAccess",
-			"Effect": "Allow",
-			"Action": [
-				"secretsmanager:CreateSecret",
-				"secretsmanager:DeleteSecret",
-				"secretsmanager:DescribeSecret",
-				"secretsmanager:GetSecretValue",
-				"secretsmanager:PutSecretValue",
-				"secretsmanager:UpdateSecret",
-				"secretsmanager:TagResource",
-				"secretsmanager:UntagResource",
-				"secretsmanager:ListSecrets"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "SSMParameterAccess",
-			"Effect": "Allow",
-			"Action": [
-				"ssm:GetParameter",
-				"ssm:GetParameters",
-				"ssm:GetParametersByPath"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "ApplicationAutoScalingFullAccess",
-			"Effect": "Allow",
-			"Action": [
-				"application-autoscaling:*"
-			],
-			"Resource": "*"
-		},
-		{
-			"Sid": "CloudFrontFullAccess",
-			"Effect": "Allow",
-			"Action": "cloudfront:*",
-			"Resource": "*"
-		}
-	]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "NetworkRead",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:GetManagedPrefixListEntries"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SecurityGroups",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifySecurityGroupRules",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LoadBalancer",
+      "Effect": "Allow",
+      "Action": "elasticloadbalancing:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ECS",
+      "Effect": "Allow",
+      "Action": "ecs:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "TaskAutoScaling",
+      "Effect": "Allow",
+      "Action": "application-autoscaling:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudFront",
+      "Effect": "Allow",
+      "Action": "cloudfront:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Alarms",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:ListTagsForResource",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogGroupLookup",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogGroup",
+      "Effect": "Allow",
+      "Action": "logs:*",
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/ecs/*"
+    },
+    {
+      "Sid": "ReferenceSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetResourcePolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageServiceRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole"
+      ],
+      "Resource": "arn:aws:iam::123456789012:role/imgproxy-*"
+    },
+    {
+      "Sid": "AttachExecutionPolicyOnly",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::123456789012:role/imgproxy-*",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        }
+      }
+    },
+    {
+      "Sid": "PassRolesToECSTasksOnly",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::123456789012:role/imgproxy-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ServiceLinkedRolesOnFirstUse",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::*:role/aws-service-role/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": [
+            "ecs.amazonaws.com",
+            "elasticloadbalancing.amazonaws.com",
+            "ecs.application-autoscaling.amazonaws.com"
+          ]
+        }
+      }
+    }
+  ]
 }

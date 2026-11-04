@@ -133,12 +133,22 @@ variable "cpu" {
   type        = number
   default     = 1
   description = "vCPUs allocated to the imgproxy task (0.25, 0.5, 1, 2, 4, 8, 16). Fargate maps this to CPU units (cpu × 1024). Sets IMGPROXY_WORKERS default."
+
+  validation {
+    condition     = contains([0.25, 0.5, 1, 2, 4, 8, 16], var.cpu)
+    error_message = "cpu must be one of 0.25, 0.5, 1, 2, 4, 8, 16."
+  }
 }
 
 variable "memory" {
   type        = string
   default     = "2048Mi"
   description = "Memory limit for the Fargate task. Accepts Mi or Gi suffix (e.g. '2048Mi', '4Gi'). Must satisfy Fargate CPU/memory constraints: 1 vCPU requires 2–8 GB, 2 vCPU requires 4–16 GB."
+
+  validation {
+    condition     = can(regex("^[0-9]+(Mi|Gi)$", var.memory))
+    error_message = "memory must be a whole number with an Mi or Gi suffix, e.g. '2048Mi' or '4Gi'."
+  }
 }
 
 variable "workers" {
@@ -158,7 +168,7 @@ variable "timeout" {
 variable "source_buckets" {
   type        = list(string)
   default     = []
-  description = "S3 bucket names for imgproxy source images. The task role is granted s3:GetObject on each. Enables IMGPROXY_USE_S3."
+  description = "S3 bucket names for imgproxy source images. The task role is granted s3:GetObject, s3:GetObjectVersion and s3:ListBucket on each. Enables IMGPROXY_USE_S3."
 }
 
 variable "cache_bucket" {
@@ -219,7 +229,7 @@ variable "pro_license_key_secret" {
 variable "enable_monitoring" {
   type        = bool
   default     = false
-  description = "Enable the AWS Distro for OpenTelemetry (ADOT) sidecar container to export traces to X-Ray and metrics/logs to CloudWatch. Automatically configures imgproxy OTEL environment variables."
+  description = "Enable the AWS Distro for OpenTelemetry (ADOT) sidecar container to export traces and metrics to X-Ray and CloudWatch. Automatically configures imgproxy OTEL environment variables."
 }
 
 variable "otel_collector_config" {
@@ -243,7 +253,7 @@ variable "vpc_id" {
 
 variable "subnet_ids" {
   type        = list(string)
-  description = "Subnet IDs for Fargate tasks. Use public subnets with assign_public_ip = true, or private subnets with a NAT gateway."
+  description = "Subnet IDs for Fargate tasks. Use private subnets with a NAT gateway (recommended), or public subnets with assign_public_ip = true."
 }
 
 variable "alb_subnet_ids" {
@@ -260,8 +270,8 @@ variable "internal_alb" {
 
 variable "assign_public_ip" {
   type        = bool
-  default     = true
-  description = "Assign a public IP to Fargate tasks. Required in public subnets to pull container images from public registries. Set to false when using private subnets with a NAT gateway."
+  default     = false
+  description = "Assign a public IP to Fargate tasks. Off by default: run the tasks in private subnets with a NAT gateway (or VPC endpoints). Set to true only when the subnets are public, such as those of the default VPC: tasks then need it to pull the image, and every task is directly addressable by IP (the task security group still only accepts the ALB on port 8080)."
 }
 
 variable "additional_security_group_ids" {
@@ -281,7 +291,13 @@ variable "create_alb" {
 variable "alb_certificate_arns" {
   type        = list(string)
   default     = []
-  description = "ACM certificate ARNs for the HTTPS listener. When non-empty, creates a port 443 HTTPS listener. The first ARN is the primary certificate; additional ARNs are attached as SNI extras."
+  description = "ACM certificate ARNs for the HTTPS listener. Required unless allow_insecure_http = true. Creates a port 443 HTTPS listener; the first ARN is the primary certificate and additional ARNs are attached as SNI extras."
+}
+
+variable "allow_insecure_http" {
+  type        = bool
+  default     = false
+  description = "Allow the ALB to serve plain HTTP only, that is, without alb_certificate_arns. For testing only: requests, signed URLs and tokens travel unencrypted. With CloudFront it also makes CloudFront reach the ALB over plain HTTP, so the origin secret header and all traffic cross the network in clear text."
 }
 
 variable "alb_redirect_http_to_https" {
@@ -320,6 +336,12 @@ variable "enable_cloudfront" {
   type        = bool
   default     = false
   description = "Create a CloudFront distribution in front of the ALB for global edge caching. Requires create_alb = true."
+}
+
+variable "cloudfront_origin_domain" {
+  type        = string
+  default     = null
+  description = "Domain name CloudFront uses to reach the ALB over HTTPS, for example 'origin.example.com'. Create a DNS record for it that points at the ALB (see the alb_dns_name and alb_zone_id outputs) and cover it with a certificate in alb_certificate_arns. Required when enable_cloudfront = true and alb_certificate_arns is set, because CloudFront validates the ALB certificate against this name. Must differ from cloudfront_domains."
 }
 
 variable "cloudfront_certificate_arn" {

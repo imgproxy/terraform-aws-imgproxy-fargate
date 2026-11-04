@@ -20,8 +20,8 @@ provider "aws" {
 }
 
 # The default VPC only has public subnets, so this example runs in it to stay self-contained.
-# For production, use your own VPC with private subnets: see "Private subnets" in the README
-# and the commented-out settings in the module block below.
+# For production, use your own VPC with private subnets and HTTPS: see "Production setup" in the
+# README and the commented-out settings in the module block below.
 data "aws_vpc" "default" {
   default = true
 }
@@ -60,19 +60,35 @@ module "imgproxy" {
   # stays on regular Fargate, and imgproxy is stateless, so an interrupted task is replaced.
   spot_percentage = 70
 
-  # Networking: tasks in public subnets of the default VPC, with public IPs
+  # Networking: tasks in public subnets of the default VPC
   vpc_id     = data.aws_vpc.default.id
   subnet_ids = data.aws_subnets.default.ids
 
-  # Production: run the tasks in private subnets and keep only the load balancer public.
-  # The private subnets need a route to a NAT gateway (the tasks pull the image and fetch
-  # source images from the internet); see "Private subnets" in the README.
-  # vpc_id           = "vpc-0123456789abcdef0"
-  # subnet_ids       = ["subnet-0aaa...", "subnet-0bbb..."] # private: the tasks
-  # alb_subnet_ids   = ["subnet-0ccc...", "subnet-0ddd..."] # public: the internet-facing ALB
-  # assign_public_ip = false
+  # Testing opt-ins: the module is private and encrypted by default. The default VPC has only public
+  # subnets and this example has no domain, so both defaults are waived here. For production, drop
+  # them and use the settings below.
+  assign_public_ip    = true # tasks in public subnets need a public IP to pull the image
+  allow_insecure_http = true # plain HTTP on the ALB: requests and signed URLs are unencrypted
+
+  # Production: tasks in private subnets, only the load balancer public, HTTPS on the load balancer.
+  # The private subnets need a route to a NAT gateway (the tasks pull the image and fetch source
+  # images from the internet); see "Production setup" in the README.
+  # vpc_id               = "vpc-0123456789abcdef0"
+  # subnet_ids           = ["subnet-0aaa...", "subnet-0bbb..."] # private: the tasks
+  # alb_subnet_ids       = ["subnet-0ccc...", "subnet-0ddd..."] # public: the internet-facing ALB
+  # alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/..."]
 }
 
 output "url" {
   value = module.imgproxy.url
+}
+
+output "alb_dns_name" {
+  value       = module.imgproxy.alb_dns_name
+  description = "ALB DNS name. Point your domain at it when you attach a certificate"
+}
+
+output "alb_zone_id" {
+  value       = module.imgproxy.alb_zone_id
+  description = "ALB hosted zone ID, for Route 53 alias records"
 }

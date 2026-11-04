@@ -42,6 +42,12 @@ module "imgproxy" {
   vpc_id     = data.aws_vpc.default.id
   subnet_ids = data.aws_subnets.default.ids
 
+  # Testing opt-ins: the module is private and encrypted by default. The default VPC has only public
+  # subnets and this example has no domain, so both defaults are waived here. For production see
+  # "Production setup" in the signed example.
+  assign_public_ip    = true # tasks in public subnets need a public IP to pull the image
+  allow_insecure_http = true # plain HTTP on the ALB: requests and signed URLs are unencrypted
+
   # Fargate Spot: 70% of the tasks run on Spot capacity, which is up to 70% cheaper.
   # One task always stays on regular Fargate, and imgproxy is stateless, so an
   # interrupted Spot task is simply replaced.

@@ -3,6 +3,10 @@ mock_provider "aws" {}
 variables {
   vpc_id     = "vpc-12345678"
   subnet_ids = ["subnet-aaa111", "subnet-bbb222"]
+
+  # Most tests plan a plain HTTP ALB; the TLS requirement has its own runs in validation.tftest.hcl.
+  allow_insecure_http = true
+
   keys_secret = {
     arn     = "arn:aws:secretsmanager:us-east-1:123456789012:secret:imgproxy/keys"
     version = ""
@@ -197,16 +201,25 @@ run "fargate_spot_configures_capacity_providers" {
   }
 }
 
-run "assign_public_ip_configurable" {
+run "tasks_have_no_public_ip_by_default" {
   command = plan
-
-  variables {
-    assign_public_ip = false
-  }
 
   assert {
     condition     = aws_ecs_service.main.network_configuration[0].assign_public_ip == false
-    error_message = "assign_public_ip must propagate to the ECS service network configuration"
+    error_message = "Tasks must not get public IPs by default"
+  }
+}
+
+run "assign_public_ip_opt_in" {
+  command = plan
+
+  variables {
+    assign_public_ip = true
+  }
+
+  assert {
+    condition     = aws_ecs_service.main.network_configuration[0].assign_public_ip == true
+    error_message = "assign_public_ip = true must propagate to the ECS service network configuration"
   }
 }
 

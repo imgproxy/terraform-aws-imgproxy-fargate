@@ -113,6 +113,12 @@ variable "alb_certificate_arns" {
   description = "ACM certificate ARNs for the HTTPS listener."
 }
 
+variable "allow_insecure_http" {
+  type        = bool
+  default     = false
+  description = "Allow the ALB to serve plain HTTP only, that is, without alb_certificate_arns. For testing only: requests, signed URLs and tokens travel unencrypted. With CloudFront it also makes CloudFront reach the ALB over plain HTTP, so the origin secret header and all traffic cross the network in clear text."
+}
+
 variable "alb_redirect_http_to_https" {
   type        = bool
   default     = true
@@ -163,6 +169,12 @@ variable "cloudfront_origin_shield_region" {
   description = "AWS region for CloudFront Origin Shield."
 }
 
+variable "cloudfront_origin_domain" {
+  type        = string
+  default     = null
+  description = "Domain name CloudFront uses to reach the ALB over HTTPS. It must be covered by a certificate in alb_certificate_arns and point at the ALB through a DNS record you create (an alias to the ALB). Required when enable_cloudfront = true and alb_certificate_arns is set. CloudFront validates the ALB certificate against this name, so the ALB's own DNS name cannot be used with your certificate. Must differ from cloudfront_domains."
+}
+
 variable "cloudfront_origin_verify_secret" {
   type        = string
   default     = null
@@ -172,7 +184,7 @@ variable "cloudfront_origin_verify_secret" {
 
 variable "cdn_default_ttl" {
   type        = number
-  default     = 2628000
+  default     = 31536000
   description = "Default CloudFront TTL in seconds."
 }
 

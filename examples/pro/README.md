@@ -3,6 +3,9 @@
 imgproxy Pro with a license key and an S3 result cache. It fetches public placeholder images, so no source bucket is
 needed.
 
+Like every example here, it waives two secure defaults for testing (`assign_public_ip = true` and
+`allow_insecure_http = true`): see [signed](../signed/#production-setup) for the production setup.
+
 ## AWS setup
 
 You need an AWS account and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html),
@@ -10,8 +13,11 @@ authenticated:
 
 ```bash
 aws configure
-# or: aws sso login --profile your-profile && export AWS_PROFILE=your-profile
+# or: aws sso login --profile my-profile && export AWS_PROFILE=my-profile
 ```
+
+> The `aws` commands below use `--profile my-profile`: replace it with your profile, or drop it if you use the default credentials.
+> An `aws: [ERROR]: An error occurred (ForbiddenException) when calling the GetRoleCredentials operation: No access` error usually means the profile is missing or wrong.
 
 ## Prerequisites
 
@@ -22,16 +28,16 @@ to pull from a private registry:
 
 ```bash
 REGION=us-east-1
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --profile my-profile --query Account --output text)
 
-aws secretsmanager create-secret --region $REGION --name imgproxy-pro-license --secret-string "your-license-key"
-aws secretsmanager create-secret --region $REGION --name imgproxy-pro-registry \
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-pro-license --secret-string "your-license-key"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-pro-registry \
   --secret-string '{"username":"imgproxy","password":"your-registry-password"}'
 
-aws secretsmanager create-secret --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
-aws secretsmanager create-secret --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
 
-aws s3 mb s3://$ACCOUNT_ID-imgproxy-cache --region $REGION
+aws s3 mb --profile my-profile s3://$ACCOUNT_ID-imgproxy-cache --region $REGION
 ```
 
 ## Deploy
@@ -49,8 +55,8 @@ Print a signed URL for a placeholder image (see [signed](../signed/) for how sig
 ```bash
 (
 URL=$(terraform output -raw url)
-KEY=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
-SALT=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
+KEY=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
+SALT=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
 IMG_PATH="/rs:fit:300:200/plain/https://picsum.photos/1200/800.jpg"
 SIG=$( (printf '%s' "$SALT" | xxd -r -p; printf '%s' "$IMG_PATH") \
   | openssl dgst -sha256 -mac HMAC -macopt hexkey:$KEY -binary \
@@ -70,7 +76,7 @@ curl -s -D- -o /dev/null "<url from above>" | grep -i x-imgproxy-cache
 The processed results are stored in the cache bucket:
 
 ```bash
-aws s3 ls s3://$ACCOUNT_ID-imgproxy-cache --recursive
+aws s3 ls --profile my-profile s3://$ACCOUNT_ID-imgproxy-cache --recursive
 ```
 
 ## Using your own registry
@@ -101,11 +107,11 @@ terraform destroy
 The bucket and the secrets were created with the AWS CLI, so delete them separately:
 
 ```bash
-aws s3 rb s3://$ACCOUNT_ID-imgproxy-cache --force
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-pro-license --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-pro-registry --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
+aws s3 rb --profile my-profile s3://$ACCOUNT_ID-imgproxy-cache --force
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-pro-license --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-pro-registry --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
 ```
 
 ## Next

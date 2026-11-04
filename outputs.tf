@@ -53,6 +53,11 @@ output "tasks_security_group_id" {
   value       = aws_security_group.tasks.id
 }
 
+output "alb_security_group_id" {
+  description = "Security group ID of the Application Load Balancer (null without an ALB). Use it to add ingress rules, e.g. for an internal ALB."
+  value       = module.aws_common.alb_sg_id
+}
+
 output "log_group_name" {
   description = "CloudWatch Log Group name for imgproxy and OTEL sidecar logs."
   value       = module.aws_common.log_group_name

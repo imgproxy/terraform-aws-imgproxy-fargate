@@ -3,6 +3,9 @@
 imgproxy reading source images from a private S3 bucket via the `s3://` URL scheme. The module grants `s3:GetObject`
 and `s3:ListBucket` on the bucket to the task role, so the bucket stays private.
 
+Like every example here, it waives two secure defaults for testing (`assign_public_ip = true` and
+`allow_insecure_http = true`): see [signed](../signed/#production-setup) for the production setup.
+
 ## AWS setup
 
 You need an AWS account and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html),
@@ -10,8 +13,11 @@ authenticated:
 
 ```bash
 aws configure
-# or: aws sso login --profile your-profile && export AWS_PROFILE=your-profile
+# or: aws sso login --profile my-profile && export AWS_PROFILE=my-profile
 ```
+
+> The `aws` commands below use `--profile my-profile`: replace it with your profile, or drop it if you use the default credentials.
+> An `aws: [ERROR]: An error occurred (ForbiddenException) when calling the GetRoleCredentials operation: No access` error usually means the profile is missing or wrong.
 
 ## Prerequisites
 
@@ -20,12 +26,12 @@ are global, so the example prefixes it with your account ID:
 
 ```bash
 REGION=us-east-1
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --profile my-profile --query Account --output text)
 
-aws secretsmanager create-secret --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
-aws secretsmanager create-secret --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
 
-aws s3 mb s3://$ACCOUNT_ID-imgproxy-images --region $REGION
+aws s3 mb --profile my-profile s3://$ACCOUNT_ID-imgproxy-images --region $REGION
 ```
 
 ## Deploy
@@ -37,7 +43,7 @@ terraform init
 terraform plan
 terraform apply
 
-aws s3 cp photo.jpg s3://$ACCOUNT_ID-imgproxy-images/photo.jpg
+aws s3 cp --profile my-profile photo.jpg s3://$ACCOUNT_ID-imgproxy-images/photo.jpg
 ```
 
 Sign the request as in [signed](../signed/), with `IMG_PATH` pointing at the bucket object:
@@ -45,8 +51,8 @@ Sign the request as in [signed](../signed/), with `IMG_PATH` pointing at the buc
 ```bash
 (
 URL=$(terraform output -raw url)
-KEY=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
-SALT=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
+KEY=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
+SALT=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
 IMG_PATH="/rs:fit:300:200/plain/s3://$ACCOUNT_ID-imgproxy-images/photo.jpg"
 SIG=$( (printf '%s' "$SALT" | xxd -r -p; printf '%s' "$IMG_PATH") \
   | openssl dgst -sha256 -mac HMAC -macopt hexkey:$KEY -binary \
@@ -68,9 +74,9 @@ terraform destroy
 The bucket and the secrets were created with the AWS CLI, so delete them separately:
 
 ```bash
-aws s3 rb s3://$ACCOUNT_ID-imgproxy-images --force
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
+aws s3 rb --profile my-profile s3://$ACCOUNT_ID-imgproxy-images --force
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
 ```
 
 ## Next

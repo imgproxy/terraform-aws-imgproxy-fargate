@@ -3,6 +3,10 @@ mock_provider "aws" {}
 variables {
   vpc_id     = "vpc-12345678"
   subnet_ids = ["subnet-aaa111", "subnet-bbb222"]
+
+  # Most tests plan a plain HTTP ALB; the TLS requirement has its own runs in validation.tftest.hcl.
+  allow_insecure_http = true
+
   keys_secret = {
     arn     = "arn:aws:secretsmanager:us-east-1:123456789012:secret:imgproxy/keys"
     version = ""

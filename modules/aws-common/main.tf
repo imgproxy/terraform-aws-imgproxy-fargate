@@ -2,9 +2,12 @@ data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
 locals {
-  alb_subnets        = coalesce(var.alb_subnet_ids, var.subnet_ids)
-  http_redirect      = var.alb_redirect_http_to_https && length(var.alb_certificate_arns) > 0
-  cf_origin_protocol = length(var.alb_certificate_arns) > 0 ? "https-only" : "http-only"
+  alb_subnets   = coalesce(var.alb_subnet_ids, var.subnet_ids)
+  http_redirect = var.alb_redirect_http_to_https && length(var.alb_certificate_arns) > 0
+  # HTTPS to the origin needs a name the ALB certificate covers; without one CloudFront
+  # falls back to plain HTTP, which is only allowed with allow_insecure_http.
+  cf_origin_https    = var.cloudfront_origin_domain != null
+  cf_origin_protocol = local.cf_origin_https ? "https-only" : "http-only"
 
   # The CloudFront prefix list admits every CloudFront distribution, not just
   # ours, so the ALB also requires this secret header when CloudFront is used.
@@ -17,6 +20,31 @@ resource "random_password" "origin_verify" {
   count   = local.cf_locked_origin && var.cloudfront_origin_verify_secret == null ? 1 : 0
   length  = 32
   special = false
+}
+
+# Cross-variable checks that a single variable validation cannot express.
+resource "terraform_data" "checks" {
+  lifecycle {
+    precondition {
+      condition     = !var.create_alb || length(var.alb_certificate_arns) > 0 || var.allow_insecure_http
+      error_message = "The ALB needs HTTPS: set alb_certificate_arns. To serve plain HTTP for testing only, set allow_insecure_http = true (requests, signed URLs and tokens are then unencrypted)."
+    }
+
+    precondition {
+      condition     = !local.cf_locked_origin || length(var.alb_certificate_arns) == 0 || var.cloudfront_origin_domain != null
+      error_message = "cloudfront_origin_domain is required when enable_cloudfront = true and alb_certificate_arns is set: CloudFront validates the ALB certificate against the origin domain name, which cannot be the ALB's own DNS name."
+    }
+
+    precondition {
+      condition     = var.cloudfront_origin_domain == null || (local.cf_locked_origin && length(var.alb_certificate_arns) > 0)
+      error_message = "cloudfront_origin_domain requires enable_cloudfront = true, create_alb = true and alb_certificate_arns covering that domain."
+    }
+
+    precondition {
+      condition     = var.cloudfront_origin_domain == null || !contains(var.cloudfront_domains, var.cloudfront_origin_domain)
+      error_message = "cloudfront_origin_domain must differ from cloudfront_domains: the origin domain points at the ALB, the CloudFront domains point at CloudFront."
+    }
+  }
 }
 
 # Fetch the managed prefix list for CloudFront origin-facing IPs so the ALB can
@@ -61,7 +89,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = [for arn in var.secret_arns : "${arn}*"]
+      Resource = var.secret_arns
     }]
   })
 }
@@ -137,21 +165,6 @@ resource "aws_iam_role_policy" "task_s3_cache" {
   })
 }
 
-resource "aws_iam_role_policy" "task_marketplace" {
-  count = var.task_role_arn == null ? 1 : 0
-  name  = "${var.service_name}-marketplace"
-  role  = aws_iam_role.task[0].name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "aws-marketplace:MeterUsage"
-      Resource = "*"
-    }]
-  })
-}
-
 resource "aws_iam_role_policy" "task_monitoring" {
   count = var.task_role_arn == null && var.enable_monitoring ? 1 : 0
   name  = "${var.service_name}-monitoring"
@@ -178,7 +191,7 @@ resource "aws_iam_role_policy" "task_monitoring" {
 }
 
 # Always grant PutMetricData for the imgproxy namespace so autoscaling alarms
-# receive ConcurrencyUtilization data regardless of enable_monitoring.
+# receive WorkersUtilization data regardless of enable_monitoring.
 resource "aws_iam_role_policy" "task_autoscaling_metrics" {
   count = var.task_role_arn == null ? 1 : 0
   name  = "${var.service_name}-autoscaling-metrics"
@@ -233,7 +246,7 @@ resource "aws_security_group" "alb" {
   # for https-only): the prefix list counts as ~55 rules against the default
   # limit of 60 rules per security group, so it can't be referenced twice.
   dynamic "ingress" {
-    for_each = var.allow_public_access && var.enable_cloudfront && length(var.alb_certificate_arns) == 0 ? [80] : []
+    for_each = var.enable_cloudfront && length(var.alb_certificate_arns) == 0 ? [80] : []
     content {
       from_port       = ingress.value
       to_port         = ingress.value
@@ -254,7 +267,7 @@ resource "aws_security_group" "alb" {
   }
 
   dynamic "ingress" {
-    for_each = var.allow_public_access && var.enable_cloudfront && length(var.alb_certificate_arns) > 0 ? [443] : []
+    for_each = var.enable_cloudfront && length(var.alb_certificate_arns) > 0 ? [443] : []
     content {
       from_port       = ingress.value
       to_port         = ingress.value
@@ -288,6 +301,8 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb[0].id]
   subnets            = local.alb_subnets
   idle_timeout       = var.alb_idle_timeout
+
+  drop_invalid_header_fields = true
 
   enable_deletion_protection = var.alb_deletion_protection
 
@@ -472,7 +487,7 @@ resource "aws_cloudfront_distribution" "main" {
   count = var.enable_cloudfront && var.create_alb ? 1 : 0
 
   origin {
-    domain_name = aws_lb.main[0].dns_name
+    domain_name = coalesce(var.cloudfront_origin_domain, aws_lb.main[0].dns_name)
     origin_id   = "alb"
 
     custom_header {

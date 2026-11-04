@@ -8,7 +8,7 @@ This example demonstrates a full-featured imgproxy deployment on ECS Fargate wit
 - Authorization token (Bearer auth)
 - OpenTelemetry-based monitoring (ADOT sidecar to X-Ray and CloudWatch)
 - S3 integration for source images and result cache
-- CloudFront CDN with a global edge cache
+- Optional CloudFront CDN with a global edge cache (needs a domain; commented out)
 - Fargate Spot for cost savings
 - Additional secrets for third-party integrations
 - Custom resource limits, concurrency, and scaling
@@ -21,8 +21,11 @@ authenticated:
 
 ```bash
 aws configure
-# or: aws sso login --profile your-profile && export AWS_PROFILE=your-profile
+# or: aws sso login --profile my-profile && export AWS_PROFILE=my-profile
 ```
+
+> The `aws` commands below use `--profile my-profile`: replace it with your profile, or drop it if you use the default credentials.
+> An `aws: [ERROR]: An error occurred (ForbiddenException) when calling the GetRoleCredentials operation: No access` error usually means the profile is missing or wrong.
 
 ## Prerequisites
 
@@ -30,33 +33,38 @@ aws configure
 
 ```bash
 REGION=us-east-1
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --profile my-profile --query Account --output text)
 
 # Signing keys (required)
-aws secretsmanager create-secret --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
-aws secretsmanager create-secret --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-keys --secret-string "$(openssl rand -hex 64)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-salts --secret-string "$(openssl rand -hex 64)"
 
 # imgproxy Pro (if using pro = true); the registry secret is JSON, for docker.imgproxy.pro or for your own registry set via repo
-aws secretsmanager create-secret --region $REGION --name imgproxy-pro-license --secret-string "your-license-key"
-aws secretsmanager create-secret --region $REGION --name imgproxy-pro-registry \
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-pro-license --secret-string "your-license-key"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-pro-registry \
   --secret-string '{"username":"imgproxy","password":"your-registry-password"}'
 
 # Optional: authorization token (Bearer auth; cannot be used together with CloudFront)
-aws secretsmanager create-secret --region $REGION --name imgproxy-secret --secret-string "$(openssl rand -hex 32)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-secret --secret-string "$(openssl rand -hex 32)"
 
 # Optional: source URL encryption key
-aws secretsmanager create-secret --region $REGION --name imgproxy-source-url-key --secret-string "$(openssl rand -hex 16)"
+aws secretsmanager create-secret --profile my-profile --region $REGION --name imgproxy-source-url-key --secret-string "$(openssl rand -hex 16)"
 
 # S3 buckets for source images and the result cache (not managed by Terraform)
-aws s3 mb s3://$ACCOUNT_ID-imgproxy-complete-source --region $REGION
-aws s3 mb s3://$ACCOUNT_ID-imgproxy-complete-cache --region $REGION
+aws s3 mb --profile my-profile s3://$ACCOUNT_ID-imgproxy-complete-source --region $REGION
+aws s3 mb --profile my-profile s3://$ACCOUNT_ID-imgproxy-complete-cache --region $REGION
 ```
 
 ## Deploy
 
 Everything is configured in [main.tf](main.tf); edit it to enable the commented-out options (Bearer auth, source URL
-encryption, trusted signatures, extra secrets, a custom registry, private subnets, HTTPS on the load balancer, a CloudFront
-domain).
+encryption, trusted signatures, extra secrets, a custom registry, private subnets, HTTPS on the load balancer, CloudFront
+with a domain).
+
+Like every example here, it waives two secure defaults for testing (`assign_public_ip = true` and
+`allow_insecure_http = true`): see [signed](../signed/#production-setup) for the production setup. CloudFront needs
+HTTPS between itself and the load balancer, so enabling it means attaching the ALB certificate, setting
+`cloudfront_origin_domain` and creating a DNS record for it: see [cdn](../cdn/#production-https-between-cloudfront-and-the-alb).
 
 1. **Deploy:**
 
@@ -74,14 +82,17 @@ terraform apply
 terraform output url
 ```
 
-3. **If you added a CloudFront domain, point DNS:**
+3. **If you enabled CloudFront, point DNS:**
 
 ```bash
-# Get the CloudFront domain
+# The load balancer, for the cloudfront_origin_domain record (origin.example.com)
+terraform output alb_dns_name
+
+# The CloudFront domain, for the public domain (cdn.example.com)
 terraform output cloudfront_domain_name
 
-# Create a CNAME record pointing cdn.example.com to this domain
-# (or a Route 53 alias record). The certificate must be issued in us-east-1.
+# Create a CNAME record (or a Route 53 alias record) for each. The CloudFront certificate must be
+# issued in us-east-1; the ALB certificate in the region the service runs in.
 ```
 
 ## Testing S3 Integration
@@ -89,7 +100,7 @@ terraform output cloudfront_domain_name
 Upload a test image to the source bucket:
 
 ```bash
-aws s3 cp test-image.jpg s3://$ACCOUNT_ID-imgproxy-complete-source/photo.jpg
+aws s3 cp --profile my-profile test-image.jpg s3://$ACCOUNT_ID-imgproxy-complete-source/photo.jpg
 ```
 
 Then access it via imgproxy using a signed URL:
@@ -97,8 +108,8 @@ Then access it via imgproxy using a signed URL:
 ```bash
 (
 URL=$(terraform output -raw url)
-KEY=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
-SALT=$(aws secretsmanager get-secret-value --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
+KEY=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-keys --query SecretString --output text)
+SALT=$(aws secretsmanager get-secret-value --profile my-profile --region $REGION --secret-id imgproxy-salts --query SecretString --output text)
 IMG_PATH="/plain/s3://$ACCOUNT_ID-imgproxy-complete-source/photo.jpg"
 SIG=$( (printf '%s' "$SALT" | xxd -r -p; printf '%s' "$IMG_PATH") \
   | openssl dgst -sha256 -mac HMAC -macopt hexkey:$KEY -binary \
@@ -126,12 +137,12 @@ terraform destroy
 The buckets and the secrets were created with the AWS CLI, so delete them separately (and remove the DNS record if you added a domain):
 
 ```bash
-aws s3 rb s3://$ACCOUNT_ID-imgproxy-complete-source --force
-aws s3 rb s3://$ACCOUNT_ID-imgproxy-complete-cache --force
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-pro-license --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-pro-registry --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-secret --force-delete-without-recovery
-aws secretsmanager delete-secret --region $REGION --secret-id imgproxy-source-url-key --force-delete-without-recovery
+aws s3 rb --profile my-profile s3://$ACCOUNT_ID-imgproxy-complete-source --force
+aws s3 rb --profile my-profile s3://$ACCOUNT_ID-imgproxy-complete-cache --force
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-keys --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-salts --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-pro-license --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-pro-registry --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-secret --force-delete-without-recovery
+aws secretsmanager delete-secret --profile my-profile --region $REGION --secret-id imgproxy-source-url-key --force-delete-without-recovery
 ```
