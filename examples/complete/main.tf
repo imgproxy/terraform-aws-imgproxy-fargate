@@ -71,7 +71,7 @@ locals {
 }
 
 module "imgproxy" {
-  source  = "imgproxy/imgproxy-fargate/aws"
+  source  = "imgproxy/ecs-fargate-imgproxy/aws"
   version = "~> 0.1"
 
   service_name = "imgproxy"
